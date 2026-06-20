@@ -79,11 +79,24 @@ public:
 
 	void update();
 
+	/*!
+	 *  @brief Force the LED off regardless of status flags.
+	 *         Used by PowerManager during IDLE and DOCKED states.
+	 *  @param forced true to suppress all LED activity
+	 */
+	void setForcedOff(bool forced) {
+		m_ForcedOff = forced;
+		if (forced) {
+			off();
+		}
+	}
+
 private:
 	uint8_t m_CurrentCount = 0;
 	unsigned long m_Timer = 0;
 	LEDStage m_CurrentStage = OFF;
 	unsigned long m_LastUpdate = millis();
+	bool m_ForcedOff = false;
 
 	uint8_t m_Pin = LED_PIN;
 	bool m_Enabled = m_Pin >= 0 && m_Pin < LED_OFF;

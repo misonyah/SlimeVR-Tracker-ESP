@@ -37,7 +37,7 @@ void LEDManager::setup() {
 }
 
 void LEDManager::on() {
-	if (m_Enabled) {
+	if (m_Enabled && !m_ForcedOff) {
 		digitalWrite(m_Pin, m_On);
 	}
 }
@@ -62,6 +62,10 @@ void LEDManager::pattern(unsigned long timeon, unsigned long timeoff, int times)
 }
 
 void LEDManager::update() {
+	if (m_ForcedOff) {
+		return;
+	}
+
 	unsigned long time = millis();
 	unsigned long diff = time - m_LastUpdate;
 

@@ -27,6 +27,7 @@
 
 #include "../debugging/Benchmark.h"
 #include "SensorBuilder.h"
+#include "Wire.h"
 
 namespace SlimeVR::Sensors {
 
@@ -140,6 +141,38 @@ void SensorManager::update() {
 	networkConnection.endBundle();
 #endif
 	sensorManagerNetworkingBM.after();
+}
+
+void SensorManager::resetSensors() {
+	m_Logger.info("Sensor soft-reset: clearing I2C bus and reinitializing IMUs");
+
+	statusManager.setStatus(SlimeVR::Status::IMU_ERROR, false);
+
+	m_Sensors.clear();
+
+#ifdef ESP32
+	Wire.end();
+#endif
+	auto clearResult = I2CSCAN::clearBus(PIN_IMU_SDA, PIN_IMU_SCL);
+	if (clearResult != 0) {
+		m_Logger.warn("I2C bus clear returned %d", clearResult);
+	}
+	delay(100);
+
+	Wire.begin(static_cast<int>(PIN_IMU_SDA), static_cast<int>(PIN_IMU_SCL));
+#ifdef ESP8266
+	Wire.setClockStretchLimit(150000L);
+#endif
+#ifdef ESP32
+	Wire.setTimeOut(150);
+#endif
+	Wire.setClock(I2C_SPEED);
+	delay(100);
+
+	setup();
+	postSetup();
+
+	m_Logger.info("Sensor soft-reset complete");
 }
 
 }  // namespace SlimeVR::Sensors

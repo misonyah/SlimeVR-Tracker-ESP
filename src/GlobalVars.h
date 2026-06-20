@@ -30,6 +30,7 @@
 #include "network/manager.h"
 #include "network/wifihandler.h"
 #include "network/wifiprovisioning.h"
+#include "power/PowerManager.h"
 #include "sensors/SensorManager.h"
 #include "status/LEDManager.h"
 #include "status/StatusManager.h"
@@ -44,3 +45,4 @@ extern SlimeVR::Network::Connection networkConnection;
 extern BatteryMonitor battery;
 extern SlimeVR::WiFiNetwork wifiNetwork;
 extern SlimeVR::WifiProvisioning wifiProvisioning;
+extern SlimeVR::PowerManager powerManager;

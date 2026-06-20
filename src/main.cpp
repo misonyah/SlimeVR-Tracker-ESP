@@ -44,6 +44,7 @@ SlimeVR::Network::Manager networkManager;
 SlimeVR::Network::Connection networkConnection;
 SlimeVR::WiFiNetwork wifiNetwork;
 SlimeVR::WifiProvisioning wifiProvisioning;
+SlimeVR::PowerManager powerManager;
 
 SlimeVR::Debugging::Benchmark tpsCounterBM{"tpsCounter.update()"};
 SlimeVR::Debugging::Benchmark globalTimerBM{"globalTimer.tick()"};
@@ -53,6 +54,7 @@ SlimeVR::Debugging::Benchmark networkManagerBM{"networkManager.update()"};
 SlimeVR::Debugging::Benchmark sensorManagerBM{"sensorManager.update()"};
 SlimeVR::Debugging::Benchmark batteryBM{"battery.Loop()"};
 SlimeVR::Debugging::Benchmark ledManagerBM{"ledManager.update()"};
+SlimeVR::Debugging::Benchmark powerManagerBM{"powerManager.update()"};
 SlimeVR::Debugging::Benchmark i2cScanBM{"I2CSCAN::update()"};
 SlimeVR::Debugging::Benchmark targetLooptimeBM{"TARGET_LOOPTIME_MICROS"};
 SlimeVR::Debugging::Benchmark printStateBM{"Serial printState()"};
@@ -151,6 +153,7 @@ void setup() {
 	networkManager.setup();
 	OTA::otaSetup(otaPassword);
 	battery.Setup();
+	powerManager.setup();
 
 	statusManager.setStatus(SlimeVR::Status::LOADING, false);
 
@@ -188,6 +191,10 @@ void loop() {
 	batteryBM.before();
 	battery.Loop();
 	batteryBM.after();
+
+	powerManagerBM.before();
+	powerManager.update();
+	powerManagerBM.after();
 
 	ledManagerBM.before();
 	ledManager.update();

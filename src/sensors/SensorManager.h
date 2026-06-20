@@ -49,6 +49,10 @@ public:
 
 	void update();
 
+	// Re-initialize the I2C bus and all sensors. Call when extension tracker
+	// communication breaks or IMU_ERROR persists.
+	void resetSensors();
+
 	std::vector<std::unique_ptr<::Sensor>>& getSensors() { return m_Sensors; };
 	SensorTypeID getSensorType(size_t id) {
 		if (id < m_Sensors.size()) {
