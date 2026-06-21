@@ -62,6 +62,12 @@
 #define BATTERY_MONITOR BAT_EXTERNAL
 #endif
 
+// Heartbeat blink interval (ms) while awake and connected to server.
+// Set to 0 to disable. This uses the LEDManager standby pattern (1 blink per interval).
+#ifndef LED_INTERVAL_STANDBY
+#define LED_INTERVAL_STANDBY 3000
+#endif
+
 // --- OVERRIDES FOR DEFAULT PINS
 
 // #define PIN_IMU_SDA 14

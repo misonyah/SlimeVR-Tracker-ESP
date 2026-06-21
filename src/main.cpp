@@ -181,7 +181,9 @@ void loop() {
 	otaBM.after();
 
 	networkManagerBM.before();
-	networkManager.update();
+	if (!powerManager.isSleeping()) {
+		networkManager.update();
+	}
 	networkManagerBM.after();
 
 	sensorManagerBM.before();

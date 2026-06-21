@@ -53,6 +53,12 @@ public:
 	// communication breaks or IMU_ERROR persists.
 	void resetSensors();
 
+	// Returns the most recent millis() timestamp at which any sensor detected movement.
+	uint32_t getLastMotionMs() const;
+
+	// Enter/exit low-power mode on all sensors (reduces BNO085 report rates).
+	void setSleepMode(bool sleeping);
+
 	std::vector<std::unique_ptr<::Sensor>>& getSensors() { return m_Sensors; };
 	SensorTypeID getSensorType(size_t id) {
 		if (id < m_Sensors.size()) {

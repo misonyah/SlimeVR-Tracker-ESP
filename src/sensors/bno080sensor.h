@@ -67,6 +67,10 @@ public:
 	bool isFlagSupported(SensorToggles toggle) const final;
 	void sendTempIfNeeded();
 
+	uint32_t getLastMotionMs() const override { return m_LastMotionMs; }
+	void enterSleepMode() override;
+	void exitSleepMode() override;
+
 	static SensorTypeID checkPresent(
 		SlimeVR::Sensors::RegisterInterface& registerInterface
 	) {
@@ -111,6 +115,9 @@ private:
 	float lastReadTemperature = 0;
 	uint32_t lastTempPollTime = micros();
 	uint32_t m_lastTemperaturePacketSent = 0;
+
+	// Motion tracking for power management
+	uint32_t m_LastMotionMs = 0;
 };
 
 class BNO085Sensor : public BNO080Sensor {

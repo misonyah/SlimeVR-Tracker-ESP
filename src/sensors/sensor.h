@@ -81,6 +81,13 @@ public:
 	virtual void setFusedRotation(Quat r);
 	virtual void startCalibration(int calibrationType){};
 	virtual SensorStatus getSensorState();
+
+	// Motion-based power management hooks.
+	// getLastMotionMs() returns the millis() timestamp of the last detected movement.
+	// Default returns millis() (assume always moving) so unknown sensors never trigger sleep.
+	virtual uint32_t getLastMotionMs() const { return millis(); }
+	virtual void enterSleepMode() {}
+	virtual void exitSleepMode() {}
 	virtual void printTemperatureCalibrationState();
 	virtual void printDebugTemperatureCalibrationState();
 	virtual void resetTemperatureCalibrationState();

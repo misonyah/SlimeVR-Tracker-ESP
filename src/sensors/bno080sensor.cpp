@@ -142,6 +142,7 @@ void BNO080Sensor::motionSetup() {
 
 	lastReset = 0;
 	lastData = millis();
+	m_LastMotionMs = millis();  // idle timer starts from IMU init, not epoch 0
 	working = true;
 	configured = true;
 	m_tpsCounter.reset();
@@ -332,8 +333,12 @@ void BNO080Sensor::motionLoop() {
 		);
 	}
 
-	if (imu.getStabilityClassifier() == 1) {
+	uint8_t stability = imu.getStabilityClassifier();
+	if (stability == 1) {
 		markRestCalibrationComplete();
+	} else if (stability != 0) {
+		// 0 = unknown (no report yet); anything else (2-5) = motion
+		m_LastMotionMs = millis();
 	}
 }
 
@@ -395,4 +400,49 @@ void BNO080Sensor::startCalibration(int calibrationType) {
 
 bool BNO080Sensor::isFlagSupported(SensorToggles toggle) const {
 	return toggle == SensorToggles::MagEnabled;
+}
+
+void BNO080Sensor::enterSleepMode() {
+	if (!working) return;
+	// Reduce all output rates to ~2 Hz; keep stability classifier for wake detection
+	imu.enableLinearAccelerometer(500);
+	imu.enableStabilityClassifier(200);
+	imu.enableRawGyro(0);  // interval 0 = disable report
+	if (!toggles.getToggle(SensorToggles::MagEnabled)) {
+		if ((sensorType == SensorTypeID::BNO085 || sensorType == SensorTypeID::BNO086)
+			&& BNO_USE_ARVR_STABILIZATION) {
+			imu.enableARVRStabilizedGameRotationVector(500);
+		} else {
+			imu.enableGameRotationVector(500);
+		}
+	} else {
+		if ((sensorType == SensorTypeID::BNO085 || sensorType == SensorTypeID::BNO086)
+			&& BNO_USE_ARVR_STABILIZATION) {
+			imu.enableARVRStabilizedRotationVector(500);
+		} else {
+			imu.enableRotationVector(500);
+		}
+	}
+}
+
+void BNO080Sensor::exitSleepMode() {
+	if (!working) return;
+	imu.enableLinearAccelerometer(10);
+	imu.enableStabilityClassifier(500);
+	imu.enableRawGyro(1000);
+	if (!toggles.getToggle(SensorToggles::MagEnabled)) {
+		if ((sensorType == SensorTypeID::BNO085 || sensorType == SensorTypeID::BNO086)
+			&& BNO_USE_ARVR_STABILIZATION) {
+			imu.enableARVRStabilizedGameRotationVector(10);
+		} else {
+			imu.enableGameRotationVector(10);
+		}
+	} else {
+		if ((sensorType == SensorTypeID::BNO085 || sensorType == SensorTypeID::BNO086)
+			&& BNO_USE_ARVR_STABILIZATION) {
+			imu.enableARVRStabilizedRotationVector(10);
+		} else {
+			imu.enableRotationVector(10);
+		}
+	}
 }

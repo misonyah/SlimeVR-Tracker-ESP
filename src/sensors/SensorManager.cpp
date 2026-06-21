@@ -143,6 +143,27 @@ void SensorManager::update() {
 	sensorManagerNetworkingBM.after();
 }
 
+uint32_t SensorManager::getLastMotionMs() const {
+	uint32_t latest = 0;
+	for (const auto& sensor : m_Sensors) {
+		if (sensor->isWorking()) {
+			uint32_t t = sensor->getLastMotionMs();
+			if (t > latest) latest = t;
+		}
+	}
+	return latest;
+}
+
+void SensorManager::setSleepMode(bool sleeping) {
+	for (auto& sensor : m_Sensors) {
+		if (sleeping) {
+			sensor->enterSleepMode();
+		} else {
+			sensor->exitSleepMode();
+		}
+	}
+}
+
 void SensorManager::resetSensors() {
 	m_Logger.info("Sensor soft-reset: clearing I2C bus and reinitializing IMUs");
 

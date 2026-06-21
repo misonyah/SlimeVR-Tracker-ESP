@@ -25,67 +25,84 @@
 
 #include "../GlobalVars.h"
 
+#ifdef ESP8266
+#include <ESP8266WiFi.h>
+#endif
+
 namespace SlimeVR {
 
-static const char* stateNames[] = {"ACTIVE", "IDLE", "DOCKED"};
-
 void PowerManager::setup() {
-#ifdef PIN_CHARGING
-	pinMode(PIN_CHARGING, INPUT_PULLUP);
-	m_Logger.info("Charging detection via PIN_CHARGING=%d (active-low)", PIN_CHARGING);
-#else
-	m_Logger.info("No charging pin defined; DOCKED state disabled");
-#endif
-	m_LastConnectedMs = millis();
-}
-
-bool PowerManager::detectCharging() const {
-#ifdef PIN_CHARGING
-	// TP4056 CHRG pin: open-drain, pulled LOW while charging
-	return digitalRead(PIN_CHARGING) == LOW;
-#else
-	// Voltage-based detection is unreliable on v1.2 boards: TP4056 charges to
-	// 4.2V which is below any safe threshold, so we can't distinguish charging
-	// from a nearly-full battery. Disable DOCKED state unless PIN_CHARGING is wired.
-	return false;
-#endif
-}
-
-void PowerManager::applyState(PowerState newState) {
-	if (m_State == newState) {
-		return;
-	}
-
 	m_Logger.info(
-		"Power: %s -> %s",
-		stateNames[static_cast<int>(m_State)],
-		stateNames[static_cast<int>(newState)]
+		"Power management: idle=%lus search=%lus",
+		(unsigned long)(POWER_IDLE_TIMEOUT_MS / 1000),
+		(unsigned long)(POWER_SEARCH_TIMEOUT_MS / 1000)
 	);
-	m_State = newState;
-
-	// Suppress all LED activity while not actively tracking
-	bool silent = (newState == PowerState::IDLE || newState == PowerState::DOCKED);
-	ledManager.setForcedOff(silent);
+	// Search deadline starts now so a cold boot with no server sleeps after 1 min.
+	m_SearchDeadlineMs = millis() + POWER_SEARCH_TIMEOUT_MS;
 }
 
 void PowerManager::update() {
-	m_Charging = detectCharging();
+	uint32_t now = millis();
+
+	if (m_State == PowerState::SLEEPING) {
+		// Enforce minimum sleep time to avoid rapid wake/sleep cycling.
+		if (now - m_SleepStartMs < POWER_MIN_SLEEP_MS) {
+			return;
+		}
+		// Wake on any motion detected after we fell asleep.
+		if (sensorManager.getLastMotionMs() > m_SleepStartMs) {
+			exitSleep();
+		}
+		return;
+	}
+
+	// ── AWAKE ──────────────────────────────────────────────────────────────
 
 	if (networkConnection.isConnected()) {
-		m_LastConnectedMs = millis();
+		m_SearchDeadlineMs = 0;  // server found; cancel search timeout
 	}
 
-	if (m_Charging) {
-		applyState(PowerState::DOCKED);
+	uint32_t lastMotion = sensorManager.getLastMotionMs();
+	bool totallyIdle = (now - lastMotion >= POWER_IDLE_TIMEOUT_MS);
+
+	if (totallyIdle) {
+		m_Logger.info("Power: idle for %lu s, sleeping", (unsigned long)(POWER_IDLE_TIMEOUT_MS / 1000));
+		enterSleep();
 		return;
 	}
 
-	if (millis() - m_LastConnectedMs >= POWER_IDLE_TIMEOUT_MS) {
-		applyState(PowerState::IDLE);
-		return;
+	// If we woke from sleep and haven't found the server yet, give up after the deadline.
+	if (m_SearchDeadlineMs != 0 && now >= m_SearchDeadlineMs
+		&& !networkConnection.isConnected()) {
+		m_Logger.info("Power: no server in %lu s, sleeping", (unsigned long)(POWER_SEARCH_TIMEOUT_MS / 1000));
+		enterSleep();
 	}
+}
 
-	applyState(PowerState::ACTIVE);
+void PowerManager::enterSleep() {
+	if (m_State == PowerState::SLEEPING) return;
+	m_Logger.info("Power: AWAKE -> SLEEPING");
+	m_State = PowerState::SLEEPING;
+	m_SleepStartMs = millis();
+	ledManager.setForcedOff(true);
+	sensorManager.setSleepMode(true);
+#ifdef ESP8266
+	WiFi.forceSleepBegin();
+#endif
+}
+
+void PowerManager::exitSleep() {
+	if (m_State == PowerState::AWAKE) return;
+	m_Logger.info("Power: SLEEPING -> AWAKE (motion detected)");
+	m_State = PowerState::AWAKE;
+#ifdef ESP8266
+	WiFi.forceSleepWake();
+	delay(1);
+#endif
+	sensorManager.setSleepMode(false);
+	ledManager.setForcedOff(false);
+	// One-minute window to find the server before sleeping again.
+	m_SearchDeadlineMs = millis() + POWER_SEARCH_TIMEOUT_MS;
 }
 
 }  // namespace SlimeVR

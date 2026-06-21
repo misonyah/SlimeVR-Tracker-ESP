@@ -26,29 +26,29 @@
 
 #include "../logging/Logger.h"
 
-// How long without server contact before entering IDLE (default: 20 minutes).
-// Only applies when not charging. Override in defines.h or platformio.ini.
+// No motion for this long → enter sleep (Wi-Fi off, BNO085 low-power).
 #ifndef POWER_IDLE_TIMEOUT_MS
 #define POWER_IDLE_TIMEOUT_MS (20UL * 60UL * 1000UL)
 #endif
 
-// Battery voltage above this level is treated as USB/charging present when no
-// PIN_CHARGING is defined. A healthy LiPo discharges below ~4.2V; USB presence
-// can push readings slightly higher on some voltage-divider designs.
-#ifndef CHARGING_VOLTAGE_THRESHOLD
-#define CHARGING_VOLTAGE_THRESHOLD 4.25f
+// After waking from sleep: if no SlimeVR server found within this window, sleep again.
+#ifndef POWER_SEARCH_TIMEOUT_MS
+#define POWER_SEARCH_TIMEOUT_MS (60UL * 1000UL)
+#endif
+
+// Minimum time to stay asleep before motion can trigger another wake.
+// Prevents rapid wake/sleep cycling when the tracker is moved while the server is down.
+#ifndef POWER_MIN_SLEEP_MS
+#define POWER_MIN_SLEEP_MS (30UL * 1000UL)
 #endif
 
 namespace SlimeVR {
 
 enum class PowerState : uint8_t {
-	// Server connected (or recently was). Full tracking. LED behaves normally.
-	ACTIVE,
-	// Not charging and server has been absent for POWER_IDLE_TIMEOUT_MS.
-	// Wi-Fi stays alive for instant resume. LED is forced off.
-	IDLE,
-	// USB / charging pin detected. LED is forced off. Never auto-idles.
-	DOCKED,
+	// Wi-Fi on, BNO085 at full rate, LED heartbeat active.
+	AWAKE,
+	// Wi-Fi off (modem sleep), BNO085 at ~2 Hz, LED off. Wakes on motion.
+	SLEEPING,
 };
 
 class PowerManager {
@@ -57,17 +57,20 @@ public:
 	void update();
 
 	PowerState getState() const { return m_State; }
-	bool isCharging() const { return m_Charging; }
+	bool isSleeping() const { return m_State == PowerState::SLEEPING; }
 
 private:
-	bool detectCharging() const;
-	void applyState(PowerState newState);
+	void enterSleep();
+	void exitSleep();
 
-	PowerState m_State = PowerState::ACTIVE;
-	bool m_Charging = false;
+	PowerState m_State = PowerState::AWAKE;
 
-	// millis() timestamp of the last observed server connection
-	unsigned long m_LastConnectedMs = 0;
+	// millis() when we entered SLEEPING; used to enforce POWER_MIN_SLEEP_MS.
+	uint32_t m_SleepStartMs = 0;
+
+	// Deadline for finding the SlimeVR server after a wake from sleep.
+	// 0 = no deadline active (server was connected at least once since last wake).
+	uint32_t m_SearchDeadlineMs = 0;
 
 	Logging::Logger m_Logger = Logging::Logger("PowerManager");
 };
