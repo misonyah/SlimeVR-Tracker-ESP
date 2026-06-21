@@ -121,6 +121,8 @@ struct SPIImpl : public RegisterInterface {
 
 	std::string toString() const override { return std::string("SPI"); }
 
+	PinInterface* getCsPin() const override { return m_csPin; }
+
 private:
 	DirectSPIInterface* m_spi;
 	PinInterface* m_csPin;

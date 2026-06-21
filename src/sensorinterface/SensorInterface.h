@@ -32,6 +32,7 @@ public:
 	virtual bool init() = 0;
 	virtual void swapIn() = 0;
 	[[nodiscard]] virtual std::string toString() const = 0;
+	[[nodiscard]] virtual bool isSPI() const { return false; }
 };
 
 class EmptySensorInterface : public SensorInterface {

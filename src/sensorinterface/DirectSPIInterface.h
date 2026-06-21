@@ -40,6 +40,7 @@ public:
 	void endTransaction(PinInterface* csPin);
 
 	[[nodiscard]] std::string toString() const final { return std::string{"SPI"}; }
+	[[nodiscard]] bool isSPI() const final { return true; }
 
 	template <typename... Args>
 	auto transfer(Args... args) {
@@ -47,6 +48,7 @@ public:
 	}
 
 	const SPISettings& getSpiSettings();
+	SPIClass& getSPIClass() { return m_spiClass; }
 
 private:
 	SPIClass& m_spiClass;

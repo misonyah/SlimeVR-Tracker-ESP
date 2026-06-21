@@ -114,17 +114,19 @@ boolean BNO080::beginSPI(PinInterface* user_CSPin, PinInterface* user_WAKPin, Pi
 	_rst = user_RSTPin;
 
 	_cs->pinMode(OUTPUT);
-	_wake->pinMode(OUTPUT);
-	_int->pinMode(INPUT_PULLUP);
-	_rst->pinMode(OUTPUT);
+	if (_wake) _wake->pinMode(OUTPUT);
+	if (_int)  _int->pinMode(INPUT_PULLUP);
+	if (_rst)  _rst->pinMode(OUTPUT);
 
 	_cs->digitalWrite(HIGH); //Deselect BNO080
 
 	//Configure the BNO080 for SPI communication
-	_wake->digitalWrite(HIGH); //Before boot up the PS0/WAK pin must be high to enter SPI mode
-	_rst->digitalWrite(LOW);   //Reset BNO080
-	delay(2);				   //Min length not specified in datasheet?
-	_rst->digitalWrite(HIGH);  //Bring out of reset
+	if (_wake) _wake->digitalWrite(HIGH); //PS0/WAK high = SPI mode
+	if (_rst) {
+		_rst->digitalWrite(LOW);
+		delay(2);
+		_rst->digitalWrite(HIGH);
+	}
 
 	//Wait for first assertion of INT before using WAK pin. Can take ~104ms
 	waitForSPI();
@@ -1670,6 +1672,10 @@ boolean BNO080::I2CTimedOut()
 //after a hardware reset
 boolean BNO080::waitForSPI()
 {
+	if (_int == nullptr) {
+		delay(10); // No INT pin (poll mode): give BNO085 time to respond
+		return (true);
+	}
 	for (uint8_t counter = 0; counter < 125; counter++) //Don't got more than 255
 	{
 		if (_int->digitalRead() == LOW)
@@ -1690,7 +1696,8 @@ boolean BNO080::receivePacket(void)
 {
 	if (_i2cPort == NULL) //Do SPI
 	{
-		if (_int->digitalRead() == HIGH)
+		// When _int is null (poll mode) always attempt read; SHTP header length==0 means no data
+		if (_int != nullptr && _int->digitalRead() == HIGH)
 			return (false); //Data is not available
 
 		//Old way: if (waitForSPI() == false) return (false); //Something went wrong
@@ -1719,7 +1726,9 @@ boolean BNO080::receivePacket(void)
 		//TODO catch this as an error and exit
 		if (dataLength == 0)
 		{
-			//Packet is empty
+			//Packet is empty — release CS so next transaction starts clean
+			_cs->digitalWrite(HIGH);
+			_spiPort->endTransaction();
 			printHeader();
 			return (false); //All done
 		}

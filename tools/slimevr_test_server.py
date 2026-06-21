@@ -103,7 +103,6 @@ def dispatch(data, addr, sock, trackers, in_bundle=False):
             t["count"] += 1
             if t["count"] % 50 == 1 and len(data) >= payload_offset + 18:
                 sensor_id = data[payload_offset]
-                # skip dataType byte at payload_offset+1
                 x, y, z, w = struct.unpack_from(">ffff", data, payload_offset + 2)
                 print(f"  {addr[0]}  sensor={sensor_id}  quat=({w:.3f}, {x:.3f}, {y:.3f}, {z:.3f})")
 
@@ -113,6 +112,14 @@ def dispatch(data, addr, sock, trackers, in_bundle=False):
     else:
         if addr in trackers:
             trackers[addr]["last_rx"] = time.time()
+        # Log unknown/unexpected types to help diagnose
+        name = {
+            0: "HEARTBEAT", 3: "HANDSHAKE", 4: "ACCEL", 12: "BATTERY",
+            15: "SENSOR_INFO", 17: "ROTATION_DATA", 19: "SIGNAL_STRENGTH",
+            22: "FEATURE_FLAGS", 24: "ACK_CONFIG", 100: "BUNDLE",
+        }.get(ptype, f"UNKNOWN({ptype})")
+        if not in_bundle:
+            print(f"  {addr[0]}  pkt={name}  len={len(data)}")
 
 
 def handle_bundle(data, addr, sock, trackers):
@@ -136,7 +143,14 @@ def main():
     print("Waiting for trackers...\n")
 
     trackers = {}
+    pkt_counts = {}   # {ptype: count} across all trackers
     last_status = time.time()
+
+    TYPE_NAMES = {
+        0: "HEARTBEAT", 3: "HANDSHAKE", 4: "ACCEL", 12: "BATTERY",
+        15: "SENSOR_INFO", 17: "ROTATION_DATA", 19: "SIGNAL",
+        22: "FEATURE_FLAGS", 100: "BUNDLE",
+    }
 
     while True:
         now = time.time()
@@ -149,6 +163,9 @@ def main():
 
         try:
             data, addr = sock.recvfrom(4096)
+            if len(data) >= 4:
+                ptype = struct.unpack_from(">I", data, 0)[0]
+                pkt_counts[ptype] = pkt_counts.get(ptype, 0) + 1
             dispatch(data, addr, sock, trackers)
         except socket.timeout:
             pass
@@ -159,10 +176,12 @@ def main():
         now = time.time()
         if now - last_status >= 5.0 and trackers:
             last_status = now
-            print(f"--- {len(trackers)} tracker(s) connected ---")
+            print(f"\n--- {len(trackers)} tracker(s)  packet type breakdown ---")
+            for pt, cnt in sorted(pkt_counts.items()):
+                print(f"  type {pt:3d}  {TYPE_NAMES.get(pt,'?'):15s}  n={cnt}")
             for addr, t in trackers.items():
                 age = now - t["last_rx"]
-                print(f"  {addr[0]}  pkts={t['count']}  last_rx={age:.1f}s ago")
+                print(f"  {addr[0]}  rot_pkts={t['count']}  last_rx={age:.1f}s ago")
 
 
 if __name__ == "__main__":

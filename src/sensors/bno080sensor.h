@@ -28,7 +28,9 @@
 #include <i2cscan.h>
 
 #include "sensor.h"
+#include "sensorinterface/DirectSPIInterface.h"
 #include "sensorinterface/RegisterInterface.h"
+#include "sensorinterface/SPIImpl.h"
 
 #define FLAG_SENSOR_BNO0XX_MAG_ENABLED 1
 

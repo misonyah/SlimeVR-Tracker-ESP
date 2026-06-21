@@ -30,7 +30,18 @@ void BNO080Sensor::motionSetup() {
 #ifdef DEBUG_SENSOR
 	imu.enableDebugging(Serial);
 #endif
-	if (!imu.begin(addr, Wire, m_IntPin)) {
+	bool initialized = false;
+	if (m_hwInterface != nullptr && m_hwInterface->isSPI()) {
+		// SPI mode (e.g. BOARD_SLIMEVR_V1_2 primary IMU).
+		// GPIO2 is shared between the LED and the BNO085 INT pin so we cannot
+		// use INT for data-ready detection; use poll mode (no INT/WAK/RST pins).
+		// WAK is assumed tied HIGH (SPI mode) and RST tied to ESP reset on this board.
+		PinInterface* csPin = m_RegisterInterface.getCsPin();
+		initialized = imu.beginSPI(csPin, nullptr, nullptr, nullptr, 3000000);
+	} else {
+		initialized = imu.begin(addr, Wire, m_IntPin);
+	}
+	if (!initialized) {
 		m_Logger.fatal(
 			"Can't connect to %s at address 0x%02x",
 			getIMUNameByType(sensorType),

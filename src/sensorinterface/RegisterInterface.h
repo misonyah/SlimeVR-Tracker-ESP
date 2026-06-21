@@ -25,6 +25,7 @@
 #include <string>
 
 #include "I2Cdev.h"
+#include "PinInterface.h"
 
 namespace SlimeVR::Sensors {
 
@@ -40,6 +41,7 @@ struct RegisterInterface {
 	[[nodiscard]] virtual uint8_t getAddress() const = 0;
 	virtual bool hasSensorOnBus() = 0;
 	[[nodiscard]] virtual std::string toString() const = 0;
+	[[nodiscard]] virtual PinInterface* getCsPin() const { return nullptr; }
 };
 
 struct EmptyRegisterInterface : public RegisterInterface {
