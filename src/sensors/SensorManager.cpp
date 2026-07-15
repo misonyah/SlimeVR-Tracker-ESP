@@ -94,6 +94,65 @@ void SensorManager::update() {
 
 	statusManager.setStatus(SlimeVR::Status::IMU_ERROR, !allIMUGood);
 
+	// Autonomous self-heal: if a sensor (e.g. an I2C extension IMU) stays in
+	// SENSOR_ERROR for SENSOR_AUTO_RESET_MS straight, reset the I2C bus and
+	// reinitialize without waiting for a human to send the SRST serial command.
+	// This is a no-op on boards where every sensor stays healthy, since
+	// allIMUGood only ever goes false when a sensor actually errors out.
+	if (allIMUGood) {
+		m_IMUErrorSinceMs = 0;
+
+		if (m_AutoResetPending) {
+			// Sensors recovered after our reset attempt.
+			networkConnection
+				.sendFirmwareSelfHealNotification("auto_reset", true, m_AutoResetDetail);
+			m_AutoResetPending = false;
+			m_AutoResetCheckCycles = 0;
+		}
+	} else {
+		if (m_IMUErrorSinceMs == 0) {
+			m_IMUErrorSinceMs = millis();
+		}
+
+		if (m_AutoResetPending) {
+			// Give the just-reset sensors a couple of update() cycles to report
+			// good status before declaring the reset attempt a failure.
+			m_AutoResetCheckCycles++;
+			if (m_AutoResetCheckCycles >= 2) {
+				networkConnection.sendFirmwareSelfHealNotification(
+					"auto_reset",
+					false,
+					m_AutoResetDetail
+				);
+				m_AutoResetPending = false;
+				m_AutoResetCheckCycles = 0;
+			}
+		} else {
+			uint32_t errorDurationMs = millis() - m_IMUErrorSinceMs;
+			bool cooldownElapsed = m_LastAutoResetMs == 0
+									 || millis() - m_LastAutoResetMs >= SENSOR_AUTO_RESET_MS;
+
+			if (errorDurationMs >= SENSOR_AUTO_RESET_MS && cooldownElapsed) {
+				snprintf(
+					m_AutoResetDetail,
+					sizeof(m_AutoResetDetail),
+					"extension IMU unresponsive for %lums",
+					static_cast<unsigned long>(errorDurationMs)
+				);
+				m_Logger.warn(
+					"IMU error persisted for %lums, attempting autonomous sensor reset",
+					static_cast<unsigned long>(errorDurationMs)
+				);
+
+				m_LastAutoResetMs = millis();
+				m_AutoResetPending = true;
+				m_AutoResetCheckCycles = 0;
+
+				resetSensors();
+			}
+		}
+	}
+
 	if (!networkConnection.isConnected()) {
 		return;
 	}

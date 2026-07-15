@@ -98,6 +98,16 @@ public:
 	// PACKET_FLEX_DATA 26
 	void sendFlexData(uint8_t sensorId, float flexLevel);
 
+	// Fire-and-forget OOB telemetry sent after an autonomous sensor self-heal
+	// attempt (see SensorManager::resetSensors()). Plain JSON, no ack expected,
+	// sent to FIRMWARE_NOTIFY_PORT — entirely independent of the primary binary
+	// packet framing used by everything else in this class.
+	void sendFirmwareSelfHealNotification(
+		const char* event,
+		bool success,
+		const char* detail
+	);
+
 #if ENABLE_INSPECTION
 	void sendInspectionRawIMUData(
 		uint8_t sensorId,

@@ -68,6 +68,24 @@
 #define LED_INTERVAL_STANDBY 3000
 #endif
 
+// Autonomous extension-sensor recovery: if SensorManager::update() sees allIMUGood
+// stay false for this many ms continuously, it calls resetSensors() automatically
+// instead of waiting for a human to send the SRST serial command. The same value is
+// reused as the cooldown between automatic reset attempts, so a permanently broken
+// extension sensor doesn't spam resets forever.
+#ifndef SENSOR_AUTO_RESET_MS
+#define SENSOR_AUTO_RESET_MS 5000
+#endif
+
+// UDP port for fire-and-forget firmware self-heal notifications sent to a companion
+// app after an autonomous sensor reset attempt (see
+// Connection::sendFirmwareSelfHealNotification()). Plain JSON, no ack expected.
+// Independent of the primary binary protocol, which uses m_ServerPort (default 6969,
+// see SERVER_PORT).
+#ifndef FIRMWARE_NOTIFY_PORT
+#define FIRMWARE_NOTIFY_PORT 6970
+#endif
+
 // --- OVERRIDES FOR DEFAULT PINS
 
 // #define PIN_IMU_SDA 14

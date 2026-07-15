@@ -407,6 +407,52 @@ void Connection::sendFlexData(uint8_t sensorId, float flexLevel) {
 	));
 }
 
+// Fire-and-forget OOB telemetry, sent after an autonomous sensor self-heal attempt
+// (see SensorManager::update() / resetSensors()). This intentionally bypasses the
+// primary binary packet framing above (beginPacket()/sendBytes()/endPacket() and
+// friends target m_ServerPort) — it's a completely separate plain-text UDP send to
+// FIRMWARE_NOTIFY_PORT, for a companion app, not the SlimeVR server. No JSON library
+// is used anywhere else in this codebase, so the fixed-shape payload is hand-built.
+void Connection::sendFirmwareSelfHealNotification(
+	const char* event,
+	bool success,
+	const char* detail
+) {
+	uint8_t mac[6];
+	WiFi.macAddress(mac);
+
+	char macStr[18];
+	snprintf(
+		macStr,
+		sizeof(macStr),
+		"%02X:%02X:%02X:%02X:%02X:%02X",
+		mac[0],
+		mac[1],
+		mac[2],
+		mac[3],
+		mac[4],
+		mac[5]
+	);
+
+	char payload[192];
+	snprintf(
+		payload,
+		sizeof(payload),
+		"{\"mac\":\"%s\",\"event\":\"%s\",\"success\":%s,\"detail\":\"%s\"}",
+		macStr,
+		event,
+		success ? "true" : "false",
+		detail
+	);
+
+	if (m_UDP.beginPacket(m_ServerHost, FIRMWARE_NOTIFY_PORT) == 0) {
+		m_Logger.warn("Firmware notify UDP beginPacket() failed");
+		return;
+	}
+	m_UDP.write(reinterpret_cast<const uint8_t*>(payload), strlen(payload));
+	m_UDP.endPacket();
+}
+
 #if ENABLE_INSPECTION
 void Connection::sendInspectionRawIMUData(
 	uint8_t sensorId,

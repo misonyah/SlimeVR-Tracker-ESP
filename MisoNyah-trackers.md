@@ -74,7 +74,48 @@ The server is notified automatically on the next heartbeat cycle.
 
 ---
 
-### 4. Serial Reset Command
+### 4. Autonomous Extension Recovery (`src/sensors/SensorManager.{h,cpp}`, `src/network/connection.{h,cpp}`)
+
+`SensorManager::update()` now tracks how long `allIMUGood` has been continuously
+false. If an I2C extension sensor (or any sensor) stays in `SENSOR_ERROR` for
+`SENSOR_AUTO_RESET_MS` (default **5000 ms**, tunable in `src/defines.h`) straight,
+the tracker calls `resetSensors()` on its own — the same soft-reset the `SRST`
+serial command triggers — with no human needed to power-cycle it or send a command.
+
+**Behavior:**
+
+1. Timer starts the moment any sensor reports `SENSOR_ERROR`; it resets to zero as
+   soon as all sensors report good again.
+2. Once the timer crosses `SENSOR_AUTO_RESET_MS`, `resetSensors()` runs
+   automatically (I2C bus clear + `Wire.begin()` + `setup()`/`postSetup()`, same as
+   section 3 above).
+3. **Cooldown:** a repeat auto-reset attempt won't fire again for another
+   `SENSOR_AUTO_RESET_MS` after the previous attempt, so a permanently broken
+   extension cable can't spam resets in a tight loop.
+4. **No-op on single-sensor boards:** `allIMUGood` only ever goes false when a
+   sensor actually errors, so this firmware is safe to flash to all 8 trackers —
+   boards without an extension sensor simply never trigger it.
+
+**Out-of-band UDP notification:** after every auto-reset attempt (success or
+failure, checked 1-2 `update()` cycles later), the tracker sends a fire-and-forget
+plain-JSON UDP packet — no ack expected — to port `FIRMWARE_NOTIFY_PORT` (default
+**6970**, also in `src/defines.h`) at the same server host it already talks to on
+port 6969:
+
+```json
+{"mac":"B4:8A:0A:D9:12:D9","event":"auto_reset","success":true,"detail":"extension IMU unresponsive for 5000ms"}
+```
+
+This is handled by `Connection::sendFirmwareSelfHealNotification()`
+(`src/network/connection.h`/`.cpp`) — a small standalone send via the connection's
+existing `WiFiUDP`, independent of the binary packet framing used for the primary
+SlimeVR server protocol. It's picked up by the `FirmwareNotificationListener` module
+in the companion `VrSessionMonitor` app (separate repo) for desktop-side logging —
+there is no reply and the tracker doesn't wait for one.
+
+---
+
+### 5. Serial Reset Command
 
 Open the serial monitor at 115200 baud and type:
 

@@ -75,6 +75,18 @@ private:
 
 	uint32_t m_LastBundleSentAtMicros = micros();
 
+	// Autonomous self-heal state (see update() / resetSensors()).
+	// millis() timestamp when allIMUGood first went false; 0 while healthy.
+	uint32_t m_IMUErrorSinceMs = 0;
+	// millis() timestamp of the last automatic resetSensors() call; 0 if none yet.
+	uint32_t m_LastAutoResetMs = 0;
+	// True while waiting to observe whether a just-attempted auto-reset worked.
+	bool m_AutoResetPending = false;
+	// Number of update() cycles observed since the pending auto-reset attempt.
+	uint8_t m_AutoResetCheckCycles = 0;
+	// Reason string captured at trigger time, reused for the outcome notification.
+	char m_AutoResetDetail[64] = {};
+
 	friend class SensorBuilder;
 };
 }  // namespace SlimeVR::Sensors
