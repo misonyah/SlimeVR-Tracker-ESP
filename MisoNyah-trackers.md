@@ -27,25 +27,39 @@ IPs may change on DHCP renewal — check the SlimeVR server log at
 
 ### 1. Power Management (`src/power/PowerManager.{h,cpp}`)
 
-Three-state idle/charging logic so you never have to worry about LEDs at night or
-dead batteries from forgotten charging.
+Motion-based sleep (this replaced the older charging-detection / ACTIVE-IDLE-DOCKED
+model). Two states, driven by the BNO085's own motion/stability classifier:
 
-| State      | Trigger                             | Effect                                       |
-| ---------- | ----------------------------------- | -------------------------------------------- |
-| **ACTIVE** | Server is connected                 | Full tracking, LED normal                    |
-| **IDLE**   | Not charging + no server for 20 min | LED forced off, Wi-Fi alive (instant resume) |
-| **DOCKED** | USB/charging detected               | LED forced off, never auto-idles             |
+| State        | Trigger                                             | Effect                                                                                |
+| ------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **AWAKE**    | Motion detected                                     | Full tracking, Wi-Fi on, LED heartbeat                                                 |
+| **SLEEPING** | No motion for `POWER_IDLE_TIMEOUT_MS` (20 min)      | **Wi-Fi modem sleep — `WiFi.forceSleepBegin()`, radio OFF**; BNO085 → 2 Hz; LED off    |
 
-**Charging detection** (pick one — no hardware change needed for the default):
+Wake happens when the BNO085 detects motion after sleep started → `exitSleep()` →
+`WiFi.forceSleepWake()`. A `POWER_MIN_SLEEP_MS` (30 s) floor prevents rapid
+wake/sleep cycling; on waking the tracker has `POWER_SEARCH_TIMEOUT_MS` (60 s) to
+find the server or it sleeps again.
 
-- **Default (voltage):** voltage ≥ 4.25 V is treated as USB present. Works without any extra wiring because the ADC reads slightly higher when USB is connected on most SlimeVR v1.2 board designs.
-- **Better (TP4056 CHRG pin):** add `#define PIN_CHARGING <gpio>` in `src/defines.h`. The TP4056 CHRG pin is open-drain active-low while charging. Wire it to an unused GPIO with a pull-up.
+**⚠️ Behavior / caveats:**
 
-**Tuning knobs** (add to `src/defines.h` to override defaults):
+- **Idle sleep is motion-based, not server-based.** It fires after 20 min of no
+  physical movement **even while the SlimeVR server is running and connected.**
+  Because the radio is fully off during sleep, the server sees the *whole* tracker
+  (both sensors on a dual board) time out and go offline until you move it. Fine
+  during active VR, but a stationary foot while sitting/AFK can drop mid-session.
+- **"Instant resume" is not instant** — waking does a Wi-Fi re-associate + SlimeVR
+  re-handshake, a few seconds.
+- To stop trackers dropping off Wi-Fi when idle: raise/disable
+  `POWER_IDLE_TIMEOUT_MS`, or remove the `WiFi.forceSleepBegin()`/`forceSleepWake()`
+  calls in `enterSleep()`/`exitSleep()` (keep the IMU/LED battery savings, leave the
+  radio on).
+
+**Tuning knobs** (defined in `src/power/PowerManager.h`, override in `src/defines.h`):
 
 ```cpp
-#define POWER_IDLE_TIMEOUT_MS   (20UL * 60UL * 1000UL)  // 20 min until IDLE
-#define CHARGING_VOLTAGE_THRESHOLD  4.25f                // V; USB-present threshold
+#define POWER_IDLE_TIMEOUT_MS   (20UL * 60UL * 1000UL)  // no-motion time until SLEEPING
+#define POWER_SEARCH_TIMEOUT_MS (60UL * 1000UL)         // post-wake window to find server
+#define POWER_MIN_SLEEP_MS      (30UL * 1000UL)         // min sleep before motion can wake
 ```
 
 ---
@@ -113,6 +127,17 @@ SlimeVR server protocol. It's picked up by the `FirmwareNotificationListener` mo
 in the companion `VrSessionMonitor` app (separate repo) for desktop-side logging —
 there is no reply and the tracker doesn't wait for one.
 
+**✅ Verified working (2026-07-27).** OTA-flashed to tracker 0 (192.168.2.15); with
+the extension physically unplugged for ~2 s, the SlimeVR server showed sensor 1 go
+to `SENSOR_ERROR` (status 2), `resetSensors()` fired 5 s later, and **both sensors
+recovered with no power-cycle** — followed by
+`{"event":"auto_reset","success":true,"detail":"extension IMU unresponsive for 5000ms"}`
+on 6970. Note: a physical **reconnect alone does not** recover the extension —
+once a sensor latches `working = false`, `SensorManager::update()` skips its
+`motionLoop()` (it only runs `motionLoop()` while `isWorking()`), so `resetSensors()`
+or a reboot is required to re-detect it. The autonomous auto-reset provides exactly
+that; before this firmware, the fix was a manual power-cycle.
+
 ---
 
 ### 5. Serial Reset Command
@@ -124,6 +149,13 @@ SRST
 ```
 
 The tracker will reply with `Sensor soft-reset: clearing I2C bus and reinitializing IMUs`.
+
+> **⚠️ Serial is unavailable on these boards over a plain USB hookup.** In testing
+> (2026-07-27) the CH340 enumerated as a COM port but the ESP produced **no output at
+> any baud** and esptool could not enter the bootloader without bridging the flash
+> pads (GPIO0→GND) — TX and the DTR/RTS auto-reset lines aren't wired through. So
+> `SRST` and the serial monitor don't work here. **Use OTA to flash** (section below)
+> and the UDP 6970 notification / SlimeVR server log to observe behavior instead.
 
 ---
 
@@ -165,5 +197,6 @@ python $espota -i 192.168.2.15 -p 8266 -a SlimeVR-OTA -f $firmware
 
 - IPs are assigned by DHCP — they can change after router restart.
 - The v1.0 board pin map used by this build: SDA=14, SCL=12, INT=16, INT2=13, Battery=A0 (pin 17), LED=2 (inverted).
-- Tracker 0 (192.168.2.15) has a second IMU connected via I2C (extension tracker).
+- Trackers 0 (192.168.2.15, left ankle+foot) and 5 (192.168.2.18, right ankle+foot) have a second IMU via I2C (extension) — the auto-heal in section 4 targets these; the single-sensor boards never trigger it.
 - All trackers run BNO085 at the firmware defaults (no magnetometer).
+- **Flashing is OTA-only in practice** — USB serial/bootloader needs the flash pads bridged (see section 5), so `python -m platformio run -t upload` over USB won't work without that. The tracker must be **awake** (move it) and on Wi-Fi for OTA to reach it.
