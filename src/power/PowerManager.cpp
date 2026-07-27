@@ -65,8 +65,11 @@ void PowerManager::update() {
 	uint32_t lastMotion = sensorManager.getLastMotionMs();
 	bool totallyIdle = (now - lastMotion >= POWER_IDLE_TIMEOUT_MS);
 
-	if (totallyIdle) {
-		m_Logger.info("Power: idle for %lu s, sleeping", (unsigned long)(POWER_IDLE_TIMEOUT_MS / 1000));
+	// Only sleep on idle when the server is actually gone. While the SlimeVR server
+	// is connected we stay awake regardless of motion, so a stationary tracker never
+	// drops off Wi-Fi mid-session (isConnected() stays true while we keep sending).
+	if (totallyIdle && !networkConnection.isConnected()) {
+		m_Logger.info("Power: idle %lus and no server, sleeping", (unsigned long)(POWER_IDLE_TIMEOUT_MS / 1000));
 		enterSleep();
 		return;
 	}

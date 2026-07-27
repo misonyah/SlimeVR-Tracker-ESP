@@ -33,26 +33,26 @@ model). Two states, driven by the BNO085's own motion/stability classifier:
 | State        | Trigger                                             | Effect                                                                                |
 | ------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | **AWAKE**    | Motion detected                                     | Full tracking, Wi-Fi on, LED heartbeat                                                 |
-| **SLEEPING** | No motion for `POWER_IDLE_TIMEOUT_MS` (20 min)      | **Wi-Fi modem sleep — `WiFi.forceSleepBegin()`, radio OFF**; BNO085 → 2 Hz; LED off    |
+| **SLEEPING** | No motion for `POWER_IDLE_TIMEOUT_MS` (20 min) **and** server disconnected | **Wi-Fi modem sleep — `WiFi.forceSleepBegin()`, radio OFF**; BNO085 → 2 Hz; LED off    |
 
 Wake happens when the BNO085 detects motion after sleep started → `exitSleep()` →
 `WiFi.forceSleepWake()`. A `POWER_MIN_SLEEP_MS` (30 s) floor prevents rapid
 wake/sleep cycling; on waking the tracker has `POWER_SEARCH_TIMEOUT_MS` (60 s) to
 find the server or it sleeps again.
 
-**⚠️ Behavior / caveats:**
+**Behavior:**
 
-- **Idle sleep is motion-based, not server-based.** It fires after 20 min of no
-  physical movement **even while the SlimeVR server is running and connected.**
-  Because the radio is fully off during sleep, the server sees the *whole* tracker
-  (both sensors on a dual board) time out and go offline until you move it. Fine
-  during active VR, but a stationary foot while sitting/AFK can drop mid-session.
-- **"Instant resume" is not instant** — waking does a Wi-Fi re-associate + SlimeVR
-  re-handshake, a few seconds.
-- To stop trackers dropping off Wi-Fi when idle: raise/disable
-  `POWER_IDLE_TIMEOUT_MS`, or remove the `WiFi.forceSleepBegin()`/`forceSleepWake()`
-  calls in `enterSleep()`/`exitSleep()` (keep the IMU/LED battery savings, leave the
-  radio on).
+- **Sleep is gated on server presence** (`networkConnection.isConnected()`): while the
+  SlimeVR server is connected the tracker stays awake regardless of motion, so a
+  stationary tracker **never drops off Wi-Fi mid-session.** It only sleeps once the
+  server is actually gone (PC off, SlimeVR closed, or Wi-Fi lost — `m_Connected` flips
+  false 3 s after the last server packet) *and* there's been no motion for 20 min.
+- **Battery tradeoff:** trackers left powered on but not worn *while SlimeVR keeps
+  running* stay fully awake and drain (a few hours). Power them off between sessions,
+  or switch to a light-idle that keeps Wi-Fi up (skip only `forceSleepBegin()`) if you
+  want idle battery savings while connected.
+- **"Instant resume" is not instant** — waking from a real (server-gone) sleep does a
+  Wi-Fi re-associate + SlimeVR re-handshake, a few seconds.
 
 **Tuning knobs** (defined in `src/power/PowerManager.h`, override in `src/defines.h`):
 
