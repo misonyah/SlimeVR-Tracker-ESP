@@ -24,6 +24,7 @@
 #include "SensorManager.h"
 
 #include <array>
+#include <cmath>
 
 #include "../debugging/Benchmark.h"
 #include "SensorBuilder.h"
@@ -99,6 +100,38 @@ void SensorManager::update() {
 	// reinitialize without waiting for a human to send the SRST serial command.
 	// This is a no-op on boards where every sensor stays healthy, since
 	// allIMUGood only ever goes false when a sensor actually errors out.
+	// Frozen-sensor self-heal: a sensor that still answers but reports the same
+	// rotation forever never reaches SENSOR_ERROR, so the path below never fires
+	// for it. Detect it by comparing against the other sensor on the board.
+	if (allIMUGood && !m_AutoResetPending) {
+		int frozen = checkForFrozenSensor();
+		bool stallCooldownElapsed
+			= m_LastStallResetMs == 0
+		   || millis() - m_LastStallResetMs >= SENSOR_STALL_COOLDOWN_MS;
+		if (frozen >= 0 && stallCooldownElapsed) {
+			snprintf(
+				m_AutoResetDetail,
+				sizeof(m_AutoResetDetail),
+				"sensor %d rotation frozen for %lums",
+				frozen,
+				static_cast<unsigned long>(SENSOR_STALL_MS)
+			);
+			m_Logger.warn(
+				"Sensor %d rotation frozen while another sensor moved, attempting "
+				"autonomous sensor reset",
+				frozen
+			);
+
+			m_LastStallResetMs = millis();
+			m_LastAutoResetMs = millis();
+			m_AutoResetPending = true;
+			m_AutoResetCheckCycles = 0;
+
+			resetSensors();
+			return;
+		}
+	}
+
 	if (allIMUGood) {
 		m_IMUErrorSinceMs = 0;
 
@@ -223,12 +256,77 @@ void SensorManager::setSleepMode(bool sleeping) {
 	}
 }
 
+int SensorManager::checkForFrozenSensor() {
+	const size_t count = m_Sensors.size();
+	if (count < 2) {
+		// Nothing to compare against: a lone sensor standing still is
+		// indistinguishable from a frozen one.
+		return -1;
+	}
+	if (m_Stall.size() != count) {
+		m_Stall.assign(count, StallTrack{});
+	}
+
+	const uint32_t now = millis();
+	int frozen = -1;
+	for (size_t i = 0; i < count; i++) {
+		auto& sensor = *m_Sensors[i];
+		auto& track = m_Stall[i];
+		if (!sensor.isWorking() || !sensor.getHadData()) {
+			track.primed = false;
+			continue;
+		}
+
+		const Quat& rotation = sensor.getFusedRotation();
+		if (!track.primed || !(rotation == track.last)) {
+			track.primed = true;
+			track.last = rotation;
+			track.lastChangeMs = now;
+			track.othersAtChange.assign(count, Quat{});
+			track.othersValid.assign(count, false);
+			for (size_t j = 0; j < count; j++) {
+				auto& other = *m_Sensors[j];
+				if (j != i && other.isWorking() && other.getHadData()) {
+					track.othersAtChange[j] = other.getFusedRotation();
+					track.othersValid[j] = true;
+				}
+			}
+			continue;
+		}
+
+		if (now - track.lastChangeMs < SENSOR_STALL_MS) {
+			continue;
+		}
+
+		for (size_t j = 0; j < count; j++) {
+			if (j == i || !track.othersValid[j]) {
+				continue;
+			}
+			auto& other = *m_Sensors[j];
+			if (!other.isWorking() || !other.getHadData()) {
+				continue;
+			}
+			float d = std::fabs(other.getFusedRotation().dot(track.othersAtChange[j]));
+			float turnedDeg = 2.0f * std::acos(d > 1.0f ? 1.0f : d) * 57.2957795f;
+			if (turnedDeg >= SENSOR_STALL_SIBLING_DEG) {
+				frozen = static_cast<int>(i);
+				break;
+			}
+		}
+		if (frozen >= 0) {
+			break;
+		}
+	}
+	return frozen;
+}
+
 void SensorManager::resetSensors() {
 	m_Logger.info("Sensor soft-reset: clearing I2C bus and reinitializing IMUs");
 
 	statusManager.setStatus(SlimeVR::Status::IMU_ERROR, false);
 
 	m_Sensors.clear();
+	m_Stall.clear();
 
 #ifdef ESP32
 	Wire.end();

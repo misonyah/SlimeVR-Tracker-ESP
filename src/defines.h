@@ -77,6 +77,24 @@
 #define SENSOR_AUTO_RESET_MS 5000
 #endif
 
+// Frozen-sensor recovery: a sensor can keep answering on I2C (so it never reaches
+// SENSOR_ERROR) while its rotation stops changing entirely. A live IMU's output always
+// moves at least in its last bits, so a bit-identical rotation for SENSOR_STALL_MS while
+// another sensor on the same board turned by SENSOR_STALL_SIBLING_DEG is treated as a
+// freeze and triggers the same resetSensors(). The sibling condition keeps a tracker that
+// is simply lying still from ever qualifying. Resets for this reason are rate-limited to
+// one per SENSOR_STALL_COOLDOWN_MS, since each one also briefly interrupts the healthy
+// sensor.
+#ifndef SENSOR_STALL_MS
+#define SENSOR_STALL_MS 3000
+#endif
+#ifndef SENSOR_STALL_SIBLING_DEG
+#define SENSOR_STALL_SIBLING_DEG 20.0f
+#endif
+#ifndef SENSOR_STALL_COOLDOWN_MS
+#define SENSOR_STALL_COOLDOWN_MS 30000
+#endif
+
 // UDP port for fire-and-forget firmware self-heal notifications sent to a companion
 // app after an autonomous sensor reset attempt (see
 // Connection::sendFirmwareSelfHealNotification()). Plain JSON, no ack expected.

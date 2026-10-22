@@ -87,6 +87,28 @@ private:
 	// Reason string captured at trigger time, reused for the outcome notification.
 	char m_AutoResetDetail[64] = {};
 
+	// Frozen-sensor detection (see checkForFrozenSensor()). One entry per sensor,
+	// rebuilt whenever the sensor list changes.
+	struct StallTrack {
+		bool primed = false;
+		Quat last{};
+		// millis() when this sensor's rotation last changed.
+		uint32_t lastChangeMs = 0;
+		// Every sensor's rotation at that moment, to measure how far the others
+		// have turned while this one stood still.
+		std::vector<Quat> othersAtChange;
+		// Whether each snapshot came from a sensor that had real data then.
+		std::vector<bool> othersValid;
+	};
+	std::vector<StallTrack> m_Stall;
+	// millis() of the last reset triggered by a frozen sensor; 0 if none yet.
+	uint32_t m_LastStallResetMs = 0;
+
+	// Returns the index of a sensor whose rotation has been bit-identical for
+	// SENSOR_STALL_MS while another working sensor turned by at least
+	// SENSOR_STALL_SIBLING_DEG, or -1 if there is none.
+	int checkForFrozenSensor();
+
 	friend class SensorBuilder;
 };
 }  // namespace SlimeVR::Sensors
